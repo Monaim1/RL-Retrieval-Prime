@@ -26,8 +26,7 @@ invention disclosure plus draft claim, then asks the agent to find prior art:
 ```bash
 uv run python environments/prior_art_search/generate_synthetic_queries.py \
   --model qwen/qwen3.6-35b-a3b \
-  --limit 20 \
-  --queries-per-difficulty 2
+  --limit 20
 ```
 
 By default this reads the same HUPD archive used by `prepare.py` and writes:
