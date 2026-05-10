@@ -123,7 +123,7 @@ def generate_queries(client: OpenAI, model: str, patent: dict[str, str]) -> list
                 {"role": "user", "content": make_prompt(patent)},
             ],
             temperature=0.4,
-            max_tokens=2500,
+            max_tokens=10000,
             response_format={"type": "json_object"},
         )
         if not response.choices:
