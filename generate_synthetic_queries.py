@@ -53,17 +53,38 @@ def load_patents(limit: int) -> list[dict[str, str]]:
 
 def make_prompt(patent: dict[str, str], n: int) -> str:
     return f"""
-Generate synthetic prior-art search questions for this patent.
+Create synthetic novelty-search scenarios from this patent.
+
+The scenario should look like an unpublished invention disclosure that an
+inventor or patent attorney would use to search for prior art. Do not write
+ordinary questions.
 
 Return JSON only in this format:
-{{"queries":[{{"difficulty":"easy|medium|hard","query":"..."}}]}}
+{{
+  "scenarios": [
+    {{
+      "difficulty": "easy|medium|hard",
+      "invention_disclosure": "...",
+      "draft_claim": "...",
+      "key_features": ["...", "..."],
+      "search_instruction": "..."
+    }}
+  ]
+}}
 
-Generate {n} queries for each difficulty: easy, medium, hard.
+Generate {n} scenarios for each difficulty: easy, medium, hard.
+
+Difficulty:
+- easy: close to the abstract, with direct technical wording.
+- medium: paraphrased, combining several technical constraints.
+- hard: claim-like and indirect, focused on mechanisms and edge cases.
 
 Rules:
 - Do not mention the publication number.
 - Do not copy the exact title.
-- The query should help retrieve this patent from a vector database.
+- Do not say this came from an existing patent.
+- Preserve the core technical mechanism from the title, abstract, and claims.
+- The scenario should help retrieve this patent from a vector database.
 
 title: {patent["title"]}
 abstract: {patent["abstract"]}
@@ -75,7 +96,10 @@ def generate_queries(client: OpenAI, model: str, patent: dict[str, str], n: int)
     response = client.chat.completions.create(
         model=model,
         messages=[
-            {"role": "system", "content": "Return strict JSON only."},
+            {
+                "role": "system",
+                "content": "You create realistic patent novelty-search scenarios. Return strict JSON only.",
+            },
             {"role": "user", "content": make_prompt(patent, n)},
         ],
         temperature=0.7,
@@ -86,7 +110,28 @@ def generate_queries(client: OpenAI, model: str, patent: dict[str, str], n: int)
         raise RuntimeError(f"Prime returned no choices: {response.model_dump()}")
 
     content = response.choices[0].message.content or "{}"
-    return json.loads(content).get("queries", [])
+    return json.loads(content).get("scenarios", [])
+
+
+def scenario_to_query(item: dict) -> str:
+    features = item.get("key_features", [])
+    if isinstance(features, list):
+        features = "\n".join(f"- {feature}" for feature in features)
+
+    return f"""Novelty search request:
+
+Invention disclosure:
+{item.get("invention_disclosure", "")}
+
+Draft claim:
+{item.get("draft_claim", "")}
+
+Key features:
+{features}
+
+Search instruction:
+{item.get("search_instruction", "Find prior-art patents that disclose the same core invention.")}
+"""
 
 
 def main() -> None:
@@ -106,18 +151,22 @@ def main() -> None:
     OUT.parent.mkdir(parents=True, exist_ok=True)
     with OUT.open("w", encoding="utf-8") as f:
         for i, patent in enumerate(patents, start=1):
-            queries = generate_queries(client, args.model, patent, args.queries_per_difficulty)
-            for item in queries:
+            scenarios = generate_queries(client, args.model, patent, args.queries_per_difficulty)
+            for item in scenarios:
                 row = {
                     "publication_number": patent["publication_number"],
-                    "query": item.get("query", ""),
+                    "query": scenario_to_query(item),
                     "difficulty": item.get("difficulty", ""),
+                    "invention_disclosure": item.get("invention_disclosure", ""),
+                    "draft_claim": item.get("draft_claim", ""),
+                    "key_features": item.get("key_features", []),
+                    "search_instruction": item.get("search_instruction", ""),
                     "abstract": patent["abstract"],
                     "title": patent["title"],
                 }
                 f.write(json.dumps(row, ensure_ascii=False) + "\n")
             f.flush()
-            print(f"[{i}/{len(patents)}] {patent['publication_number']}: {len(queries)} queries")
+            print(f"[{i}/{len(patents)}] {patent['publication_number']}: {len(scenarios)} scenarios")
 
     print(f"Wrote {OUT}")
 

@@ -19,8 +19,9 @@ the local Chroma retrieval collection:
 ```
 
 Training and evaluation scenarios are separate from retrieval preparation. Those
-scenarios are synthetic query examples generated through the Prime inference
-endpoint:
+scenarios are synthetic novelty-search tasks generated through the Prime
+inference endpoint. Each task rewrites a known patent as a realistic unpublished
+invention disclosure plus draft claim, then asks the agent to find prior art:
 
 ```bash
 uv run python environments/prior_art_search/generate_synthetic_queries.py \
@@ -38,7 +39,11 @@ environments/prior_art_search/data/synthetic_patent_queries.jsonl
 The environment expects each scenario row to contain:
 
 - `publication_number`: the gold patent ID
-- `query`: the generated query shown to the model
+- `query`: the full novelty-search request shown to the model
+- `invention_disclosure`: synthetic inventor-style disclosure
+- `draft_claim`: synthetic claim-style version of the invention
+- `key_features`: claim elements the search should preserve
+- `search_instruction`: prior-art search instruction
 - `abstract`: source abstract for reference
 - `difficulty`: generation difficulty (`easy`, `medium`, `hard`)
 
