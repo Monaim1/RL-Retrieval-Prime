@@ -29,16 +29,23 @@ def canonical_patent_id(value: str) -> str:
     return str(value).split("-", 1)[0].strip().upper()
 
 
-def load_rows(dataset_path: Path, max_examples: int) -> list[dict[str, Any]]:
+def load_rows(
+    dataset_path: Path,
+    max_examples: int,
+    difficulty: str | None = None,
+) -> list[dict[str, Any]]:
     if not dataset_path.exists():
         raise FileNotFoundError(f"Missing dataset {dataset_path}.")
 
+    difficulty = difficulty.lower() if difficulty else None
     rows = []
     with dataset_path.open("r", encoding="utf-8") as f:
         for line in f:
             if not line.strip():
                 continue
             row = json.loads(line)
+            if difficulty and row.get("difficulty", "").lower() != difficulty:
+                continue
             rows.append(
                 {
                     "prompt": [{"role": "user", "content": row["query"]}],
@@ -93,12 +100,15 @@ def load_environment(
     collection_name: str = DEFAULT_COLLECTION,
     max_examples: int = -1,
     max_turns: int = 6,
+    difficulty: str | None = None,
     **kwargs,
 ) -> vf.Environment:
     dataset_file = Path(dataset_path) if dataset_path else DEFAULT_DATASET
     if not dataset_file.is_absolute():
         dataset_file = BASE_DIR / dataset_file
-    rows = load_rows(dataset_file, max_examples)
+    rows = load_rows(dataset_file, max_examples, difficulty)
+    if not rows:
+        raise ValueError(f"No examples found in {dataset_file} for difficulty={difficulty!r}.")
     dataset = Dataset.from_list(rows)
 
     chroma_path = Path(chroma_dir) if chroma_dir else DEFAULT_CHROMA_DIR
@@ -184,6 +194,7 @@ def load_environment(
             "collection_name": collection_name,
             "max_examples": max_examples,
             "max_turns": max_turns,
+            "difficulty": difficulty,
         },
         **kwargs,
     )

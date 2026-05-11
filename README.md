@@ -84,6 +84,16 @@ prime eval run prior-art-search \
   -a '{"dataset_path": "/Users/mounselam/Developer/PI-lab/environments/prior_art_search/data/synthetic_patent_queries.jsonl", "chroma_dir": "/Users/mounselam/Developer/PI-lab/environments/prior_art_search/.chroma_db"}'
 ```
 
+Evaluate only hard scenarios:
+
+```bash
+prime eval run prior-art-search \
+  -m qwen/qwen3.6-35b-a3b \
+  -n 20 \
+  -r 4 \
+  -a '{"difficulty": "hard", "dataset_path": "/Users/mounselam/Developer/PI-lab/environments/prior_art_search/data/synthetic_patent_queries.jsonl", "chroma_dir": "/Users/mounselam/Developer/PI-lab/environments/prior_art_search/.chroma_db"}'
+```
+
 Notes:
 - Use `-a` / `--env-args` to pass environment-specific configuration as a JSON object.
 
@@ -95,6 +105,7 @@ Notes:
 | `collection_name` | str | `patent_collection` | Chroma collection to search |
 | `max_examples` | int | `-1` | Limit on dataset size (use -1 for all) |
 | `max_turns` | int | `6` | Maximum tool-use turns per rollout |
+| `difficulty` | str | `None` | Optional filter, e.g. `easy`, `medium`, or `hard` |
 
 ### Metrics
 | Metric | Meaning |
