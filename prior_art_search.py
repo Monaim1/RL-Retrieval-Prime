@@ -173,12 +173,21 @@ def load_environment(
         predicted = extract_final_patent_ids(completion)
         return 1.0 if canonical_patent_id(answer) in predicted else 0.0
 
+    async def speed_bonus(completion: Messages, answer: str, state: vf.State) -> float:
+        predicted = extract_final_patent_ids(completion)
+        if canonical_patent_id(answer) not in predicted:
+            return 0.0
+        turns = len(state["trajectory"])
+        if max_turns <= 1:
+            return 1.0
+        return max(0.0, 1.0 - ((turns - 1) / (max_turns - 1)))
+
     async def returned_any_patent(completion: Messages) -> float:
         return 1.0 if extract_final_patent_ids(completion) else 0.0
 
     rubric = vf.Rubric(
-        funcs=[correct_patent_returned, returned_any_patent],
-        weights=[1.0, 0.0],
+        funcs=[correct_patent_returned, speed_bonus, returned_any_patent],
+        weights=[1.0, 0.1, 0.0],
     )
 
     return PriorArtSearchEnv(

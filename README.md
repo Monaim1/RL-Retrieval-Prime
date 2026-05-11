@@ -109,6 +109,16 @@ Notes:
 | Metric | Meaning |
 | ------ | ------- |
 | `correct_patent_returned` | `1.0` if final `patent_ids` include the gold publication number |
+| `speed_bonus` | Small bonus for correct answers that finish in fewer turns; wrong answers get `0.0` |
 | `returned_any_patent` | Diagnostic metric for whether the model used the final-answer tool with IDs |
 | `num_turns` | Number of model/tool turns |
 | `*_calls` | Tool call counts from Verifiers' tool monitor rubric |
+
+The main reward is:
+
+```text
+correct_patent_returned + 0.1 * speed_bonus
+```
+
+`speed_bonus` is gated by correctness, so a fast wrong answer does not receive
+extra reward.
