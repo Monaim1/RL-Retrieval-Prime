@@ -2,8 +2,8 @@
 
 ### Overview
 - **Environment ID**: `prior-art-search`
-- **Short description**: <one-sentence description>
-- **Tags**: <comma-separated tags>
+- **Short description**: Tool-use environment for prior-art patent search over a local Chroma database.
+- **Tags**: patents, prior-art, search, tools, chroma
 
 ### Datasets
 - **Primary dataset(s)**: HUPD patent records processed into a local Chroma collection.
@@ -48,40 +48,52 @@ references, or curated nearest older patents, rather than rewarding retrieval of
 the same source patent used to create the scenario.
 
 ### Task
-- **Type**: <single-turn | multi-turn | tool use>
-- **Output format expectations (optional)**: <e.g., plain text, XML tags, JSON schema>
-- **Rubric overview**: <briefly list reward functions and key metrics>
+- **Type**: multi-turn tool use
+- **Tools**: `search_patents`, `lookup_patent`, `return_final_answer`
+- **Rubric overview**: binary reward for returning the gold `publication_number` in `return_final_answer(patent_ids=...)`.
 
 ### Quickstart
-Run an evaluation with default settings:
+Prepare the Chroma database:
 
 ```bash
-prime eval run prior-art-search
+cd environments/prior_art_search
+uv run python prepare.py --limit 500
+```
+
+Install the environment:
+
+```bash
+prime env install prior-art-search
+```
+
+Run a small evaluation:
+
+```bash
+prime eval run prior-art-search -m qwen/qwen3.6-35b-a3b -n 5 -r 1
 ```
 
 Configure model and sampling:
 
 ```bash
-prime eval run prior-art-search   -m openai/gpt-4.1-mini   -n 20 -r 3 -t 1024 -T 0.7   -a '{"key": "value"}'  # env-specific args as JSON
+prime eval run prior-art-search -m qwen/qwen3.6-35b-a3b -n 20 -r 3 -t 1024 -T 0.7
 ```
 
 Notes:
 - Use `-a` / `--env-args` to pass environment-specific configuration as a JSON object.
 
 ### Environment Arguments
-Document any supported environment arguments and their meaning. Example:
-
 | Arg | Type | Default | Description |
 | --- | ---- | ------- | ----------- |
-| `dataset_path` | str | `data/synthetic_patent_queries.jsonl` | Synthetic query rows keyed by `publication_number` |
+| `dataset_path` | str | auto-detected under `data/` | Synthetic scenario JSONL keyed by `publication_number` |
 | `chroma_dir` | str | `.chroma_db` | Local Chroma persistence directory |
 | `collection_name` | str | `patent_collection` | Chroma collection to search |
 | `max_examples` | int | `-1` | Limit on dataset size (use -1 for all) |
+| `max_turns` | int | `6` | Maximum tool-use turns per rollout |
 
 ### Metrics
-Summarize key metrics your rubric emits and how they’re interpreted.
-
 | Metric | Meaning |
 | ------ | ------- |
-| `reward` | Main scalar reward (weighted sum of criteria) |
-| `accuracy` | Exact match on target answer |
+| `correct_patent_returned` | `1.0` if final `patent_ids` include the gold publication number |
+| `returned_any_patent` | Diagnostic metric for whether the model used the final-answer tool with IDs |
+| `num_turns` | Number of model/tool turns |
+| `*_calls` | Tool call counts from Verifiers' tool monitor rubric |

@@ -100,21 +100,21 @@ The model receives:
 1. A system prompt explaining the tool format.
 2. A user prompt containing the query.
 
-At each turn, the model must output:
+At each turn, Verifiers exposes native tool definitions for:
 
-```text
-Thought: one short sentence
-{"tool":"...","arguments":{...}}
-```
+- `search_patents`
+- `lookup_patent`
+- `return_final_answer`
 
-The environment parses the first JSON object from the model output and runs the
-requested tool.
+The model calls these tools through the provider's tool-calling interface. The
+environment uses `vf.ToolEnv` to execute the tool call and append the tool result
+back into the conversation.
 
 If the model calls `search_patents` or `lookup_patent`, the tool result is added
 back into the conversation and the model gets another turn.
 
 If the model calls `return_final_answer`, the episode ends and reward is
-computed.
+computed from the tool call arguments.
 
 If the model outputs invalid JSON or an unknown tool, the episode ends with no
 reward.
