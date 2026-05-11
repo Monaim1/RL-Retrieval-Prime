@@ -16,7 +16,8 @@ Generate scenario rows with the Prime inference endpoint:
 ```bash
 uv run python environments/prior_art_search/generate_synthetic_queries.py \
   --model qwen/qwen3.6-35b-a3b \
-  --limit 20
+  --limit 20 \
+  --concurrency 4
 ```
 
 Outputs:

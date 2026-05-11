@@ -1,4 +1,5 @@
 import argparse
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import json
 import os
 import tarfile
@@ -12,6 +13,7 @@ from openai import OpenAI
 
 DATASET = "HUPD/hupd"
 HF_FILE = "data/sample-jan-2016.tar.gz"
+PRIME_URL = "https://api.pinference.ai/api/v1"
 OUT = Path(__file__).resolve().parent / "data" / "synthetic_patent_queries.jsonl"
 
 
@@ -113,21 +115,29 @@ def parse_json(content: str) -> dict:
 def generate_queries(client: OpenAI, model: str, patent: dict[str, str]) -> list[dict]:
     last_error = None
     for attempt in range(3):
-        response = client.chat.completions.create(
-            model=model,
-            messages=[
-                {
-                    "role": "system",
-                    "content": "Return valid JSON only. No markdown. No commentary.",
-                },
-                {"role": "user", "content": make_prompt(patent)},
-            ],
-            temperature=0.4,
-            max_tokens=10000,
-            response_format={"type": "json_object"},
-        )
+        try:
+            response = client.chat.completions.create(
+                model=model,
+                messages=[
+                    {
+                        "role": "system",
+                        "content": "Return valid JSON only. No markdown. No commentary.",
+                    },
+                    {"role": "user", "content": make_prompt(patent)},
+                ],
+                temperature=0.4,
+                max_tokens=10000,
+                response_format={"type": "json_object"},
+            )
+        except Exception as exc:
+            last_error = exc
+            time.sleep(2 * (attempt + 1))
+            continue
+
         if not response.choices:
-            raise RuntimeError(f"Prime returned no choices: {response.model_dump()}")
+            last_error = RuntimeError(f"Prime returned no choices: {response.model_dump()}")
+            time.sleep(2 * (attempt + 1))
+            continue
 
         content = response.choices[0].message.content or "{}"
         try:
@@ -144,6 +154,24 @@ def generate_queries(client: OpenAI, model: str, patent: dict[str, str]) -> list
             time.sleep(2 * (attempt + 1))
 
     raise RuntimeError(f"Could not parse JSON for {patent['publication_number']}: {last_error}")
+
+
+def completed_patent_ids(path: Path) -> set[str]:
+    if not path.exists():
+        return set()
+
+    counts: dict[str, int] = {}
+    with path.open("r", encoding="utf-8") as f:
+        for line in f:
+            if not line.strip():
+                continue
+            try:
+                patent_id = json.loads(line)["publication_number"]
+            except (json.JSONDecodeError, KeyError):
+                continue
+            counts[patent_id] = counts.get(patent_id, 0) + 1
+
+    return {patent_id for patent_id, count in counts.items() if count >= 3}
 
 
 def scenario_to_query(item: dict) -> str:
@@ -167,40 +195,89 @@ Search instruction:
 """
 
 
+def rows_for_patent(model: str, api_key: str, base_url: str, patent: dict[str, str]) -> list[dict]:
+    client = OpenAI(api_key=api_key, base_url=base_url)
+    scenarios = generate_queries(client, model, patent)
+    rows = []
+    for item in scenarios:
+        rows.append(
+            {
+                "publication_number": patent["publication_number"],
+                "query": scenario_to_query(item),
+                "difficulty": item.get("difficulty", ""),
+                "invention_disclosure": item.get("invention_disclosure", ""),
+                "draft_claim": item.get("draft_claim", ""),
+                "key_features": item.get("key_features", []),
+                "search_instruction": item.get("search_instruction", ""),
+                "abstract": patent["abstract"],
+                "title": patent["title"],
+            }
+        )
+    return rows
+
+
+def batches(items: list[dict[str, str]], size: int):
+    for start in range(0, len(items), size):
+        yield start, items[start : start + size]
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--model", default="qwen/qwen3.6-35b-a3b")
     parser.add_argument("--limit", type=int, default=20)
+    parser.add_argument("--concurrency", type=int, default=4)
     args = parser.parse_args()
 
     load_dotenv()
     if not os.getenv("PRIME_API_KEY"):
         raise RuntimeError("Set PRIME_API_KEY first.")
 
-    client = OpenAI(api_key=os.environ["PRIME_API_KEY"], base_url=os.environ["PRIME_URL"])
+    api_key = os.environ["PRIME_API_KEY"]
+    base_url = os.getenv("PRIME_URL", PRIME_URL)
+    concurrency = max(1, args.concurrency)
     patents = load_patents(args.limit)
 
     OUT.parent.mkdir(parents=True, exist_ok=True)
-    with OUT.open("w", encoding="utf-8") as f:
-        for i, patent in enumerate(patents, start=1):
-            scenarios = generate_queries(client, args.model, patent)
-            for item in scenarios:
-                row = {
-                    "publication_number": patent["publication_number"],
-                    "query": scenario_to_query(item),
-                    "difficulty": item.get("difficulty", ""),
-                    "invention_disclosure": item.get("invention_disclosure", ""),
-                    "draft_claim": item.get("draft_claim", ""),
-                    "key_features": item.get("key_features", []),
-                    "search_instruction": item.get("search_instruction", ""),
-                    "abstract": patent["abstract"],
-                    "title": patent["title"],
+    done = completed_patent_ids(OUT)
+    pending = [patent for patent in patents if patent["publication_number"] not in done]
+    print(f"Skipping {len(done)} completed patents; {len(pending)} remaining.")
+
+    failures: list[tuple[str, str]] = []
+    with OUT.open("a", encoding="utf-8") as f:
+        for batch_start, batch in batches(pending, concurrency):
+            batch_rows: dict[int, list[dict]] = {}
+            with ThreadPoolExecutor(max_workers=concurrency) as pool:
+                futures = {
+                    pool.submit(rows_for_patent, args.model, api_key, base_url, patent): batch_start + offset
+                    for offset, patent in enumerate(batch)
                 }
-                f.write(json.dumps(row, ensure_ascii=False) + "\n")
+                for future in as_completed(futures):
+                    index = futures[future]
+                    patent = pending[index]
+                    try:
+                        batch_rows[index] = future.result()
+                        print(
+                            f"[{len(done) + index + 1}/{len(patents)}] "
+                            f"{patent['publication_number']}: {len(batch_rows[index])} scenarios"
+                        )
+                    except Exception as exc:
+                        failures.append((patent["publication_number"], str(exc)))
+                        print(
+                            f"[{len(done) + index + 1}/{len(patents)}] "
+                            f"{patent['publication_number']}: failed: {exc}"
+                        )
+
+            for index in sorted(batch_rows):
+                for row in batch_rows[index]:
+                    f.write(json.dumps(row, ensure_ascii=False) + "\n")
             f.flush()
-            print(f"[{i}/{len(patents)}] {patent['publication_number']}: {len(scenarios)} scenarios")
 
     print(f"Wrote {OUT}")
+    if failures:
+        print(f"Failed patents: {len(failures)}")
+        for patent_id, error in failures[:20]:
+            print(f"- {patent_id}: {error}")
+        raise SystemExit(1)
 
 
 if __name__ == "__main__":
