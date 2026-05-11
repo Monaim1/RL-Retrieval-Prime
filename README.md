@@ -69,13 +69,19 @@ prime env install prior-art-search
 Run a small evaluation:
 
 ```bash
-prime eval run prior-art-search -m qwen/qwen3.6-35b-a3b -n 5 -r 1
+prime eval run prior-art-search \
+  -m qwen/qwen3.6-35b-a3b \
+  -n 5 -r 1 \
+  -a '{"dataset_path": "/Users/mounselam/Developer/PI-lab/environments/prior_art_search/data/synthetic_patent_queries.jsonl", "chroma_dir": "/Users/mounselam/Developer/PI-lab/environments/prior_art_search/.chroma_db"}'
 ```
 
 Configure model and sampling:
 
 ```bash
-prime eval run prior-art-search -m qwen/qwen3.6-35b-a3b -n 20 -r 3 -t 1024 -T 0.7
+prime eval run prior-art-search \
+  -m qwen/qwen3.6-35b-a3b \
+  -n 20 -r 3 -t 1024 -T 0.7 \
+  -a '{"dataset_path": "/Users/mounselam/Developer/PI-lab/environments/prior_art_search/data/synthetic_patent_queries.jsonl", "chroma_dir": "/Users/mounselam/Developer/PI-lab/environments/prior_art_search/.chroma_db"}'
 ```
 
 Notes:
@@ -84,7 +90,7 @@ Notes:
 ### Environment Arguments
 | Arg | Type | Default | Description |
 | --- | ---- | ------- | ----------- |
-| `dataset_path` | str | auto-detected under `data/` | Synthetic scenario JSONL keyed by `publication_number` |
+| `dataset_path` | str | `data/synthetic_patent_queries.jsonl` | Synthetic scenario JSONL keyed by `publication_number` |
 | `chroma_dir` | str | `.chroma_db` | Local Chroma persistence directory |
 | `collection_name` | str | `patent_collection` | Chroma collection to search |
 | `max_examples` | int | `-1` | Limit on dataset size (use -1 for all) |

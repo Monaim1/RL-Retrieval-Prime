@@ -6,7 +6,7 @@ import chromadb
 import verifiers as vf
 from chromadb.utils import embedding_functions
 from datasets import Dataset
-from verifiers.types import AssistantMessage, Messages, ToolCall, ToolMessage
+from verifiers.types import AssistantMessage, Messages, ToolMessage
 
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -29,47 +29,9 @@ def canonical_patent_id(value: str) -> str:
     return str(value).split("-", 1)[0].strip().upper()
 
 
-def resolve_dataset_path(dataset_path: str | None) -> Path:
-    if dataset_path:
-        path = Path(dataset_path)
-        return path if path.is_absolute() else BASE_DIR / path
-
-    data_dirs = [
-        BASE_DIR / "data",
-        Path.cwd() / "data",
-        Path.cwd() / "environments" / "prior_art_search" / "data",
-    ]
-    for data_dir in data_dirs:
-        default = data_dir / "synthetic_patent_queries.jsonl"
-        if default.exists():
-            return default
-        candidates = sorted(data_dir.glob("*synthetic_patent_queries.jsonl"))
-        if candidates:
-            return candidates[0]
-    return DEFAULT_DATASET
-
-
-def resolve_chroma_path(chroma_dir: str | None) -> Path:
-    if chroma_dir:
-        path = Path(chroma_dir)
-        return path if path.is_absolute() else BASE_DIR / path
-
-    candidates = [
-        DEFAULT_CHROMA_DIR,
-        Path.cwd() / ".chroma_db",
-        Path.cwd() / "environments" / "prior_art_search" / ".chroma_db",
-    ]
-    for path in candidates:
-        if path.exists():
-            return path
-    return DEFAULT_CHROMA_DIR
-
-
 def load_rows(dataset_path: Path, max_examples: int) -> list[dict[str, Any]]:
     if not dataset_path.exists():
-        raise FileNotFoundError(
-            f"Missing dataset {dataset_path}. Run generate_synthetic_queries.py first."
-        )
+        raise FileNotFoundError(f"Missing dataset {dataset_path}.")
 
     rows = []
     with dataset_path.open("r", encoding="utf-8") as f:
@@ -89,43 +51,20 @@ def load_rows(dataset_path: Path, max_examples: int) -> list[dict[str, Any]]:
     return rows
 
 
-def format_search_results(results: dict[str, Any]) -> str:
-    ids = results.get("ids", [[]])[0]
-    metadatas = results.get("metadatas", [[]])[0]
-    distances = results.get("distances", [[]])[0]
-
-    if not ids:
-        return "No patents found."
-
-    lines = []
-    for patent_id, metadata, distance in zip(ids, metadatas, distances):
-        lines.append(
-            json.dumps(
-                {
-                    "publication_number": patent_id,
-                    "title": metadata.get("title", ""),
-                    "abstract": metadata.get("abstract", "")[:500],
-                    "distance": distance,
-                },
-                ensure_ascii=False,
-            )
-        )
-    return "\n".join(lines)
-
-
 def extract_final_patent_ids(completion: Messages) -> list[str]:
     for message in reversed(completion):
         if not isinstance(message, AssistantMessage):
             continue
-        tool_calls = getattr(message, "tool_calls", None) or []
-        for tool_call in tool_calls:
-            if not isinstance(tool_call, ToolCall) or tool_call.name != "return_final_answer":
+        for tool_call in message.tool_calls or []:
+            if tool_call.name != "return_final_answer":
                 continue
             try:
-                args = json.loads(tool_call.arguments)
+                return [
+                    canonical_patent_id(x)
+                    for x in json.loads(tool_call.arguments).get("patent_ids", [])
+                ]
             except json.JSONDecodeError:
                 return []
-            return [canonical_patent_id(x) for x in args.get("patent_ids", [])]
     return []
 
 
@@ -156,11 +95,15 @@ def load_environment(
     max_turns: int = 6,
     **kwargs,
 ) -> vf.Environment:
-    dataset_file = resolve_dataset_path(dataset_path)
+    dataset_file = Path(dataset_path) if dataset_path else DEFAULT_DATASET
+    if not dataset_file.is_absolute():
+        dataset_file = BASE_DIR / dataset_file
     rows = load_rows(dataset_file, max_examples)
     dataset = Dataset.from_list(rows)
 
-    chroma_path = resolve_chroma_path(chroma_dir)
+    chroma_path = Path(chroma_dir) if chroma_dir else DEFAULT_CHROMA_DIR
+    if not chroma_path.is_absolute():
+        chroma_path = BASE_DIR / chroma_path
     if not chroma_path.exists():
         raise FileNotFoundError(
             f"Missing Chroma DB at {chroma_path}. Run prepare.py before evaluation."
@@ -178,7 +121,21 @@ def load_environment(
         """Search the patent database for patents relevant to a novelty-search query."""
         n_results = max(1, min(int(n_results), 20))
         results = collection.query(query_texts=[query], n_results=n_results)
-        return format_search_results(results)
+        hits = []
+        for patent_id, metadata, distance in zip(
+            results["ids"][0],
+            results["metadatas"][0],
+            results["distances"][0],
+        ):
+            hits.append(
+                {
+                    "publication_number": patent_id,
+                    "title": metadata.get("title", ""),
+                    "abstract": metadata.get("abstract", "")[:500],
+                    "distance": distance,
+                }
+            )
+        return json.dumps(hits, ensure_ascii=False)
 
     def lookup_patent(publication_number: str) -> str:
         """Look up a specific patent by publication number and return its indexed text."""
