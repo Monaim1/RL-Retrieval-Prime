@@ -72,7 +72,6 @@ Run a small evaluation:
 prime eval run prior-art-search \
   -m qwen/qwen3.6-35b-a3b \
   -n 5 -r 1 \
-  -a '{"dataset_path": "/Users/mounselam/Developer/PI-lab/environments/prior_art_search/data/synthetic_patent_queries.jsonl", "chroma_dir": "/Users/mounselam/Developer/PI-lab/environments/prior_art_search/.chroma_db"}'
 ```
 
 Configure model and sampling:
@@ -80,8 +79,7 @@ Configure model and sampling:
 ```bash
 prime eval run prior-art-search \
   -m qwen/qwen3.6-35b-a3b \
-  -n 20 -r 3 -t 1024 -T 0.7 \
-  -a '{"dataset_path": "/Users/mounselam/Developer/PI-lab/environments/prior_art_search/data/synthetic_patent_queries.jsonl", "chroma_dir": "/Users/mounselam/Developer/PI-lab/environments/prior_art_search/.chroma_db"}'
+  -n 20 -r 3
 ```
 
 Evaluate only hard scenarios:
@@ -91,7 +89,7 @@ prime eval run prior-art-search \
   -m qwen/qwen3.6-35b-a3b \
   -n 20 \
   -r 4 \
-  -a '{"difficulty": "hard", "dataset_path": "/Users/mounselam/Developer/PI-lab/environments/prior_art_search/data/synthetic_patent_queries.jsonl", "chroma_dir": "/Users/mounselam/Developer/PI-lab/environments/prior_art_search/.chroma_db"}'
+  -a '{"difficulty": "hard"}'
 ```
 
 Notes:
