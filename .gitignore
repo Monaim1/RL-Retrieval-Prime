@@ -1,7 +1,6 @@
 .env
 .prime/
 
-data/
 .chroma_db
 outputs/
 *.pyc

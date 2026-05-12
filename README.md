@@ -121,5 +121,4 @@ The main reward is:
 correct_patent_returned + 0.1 * speed_bonus
 ```
 
-`speed_bonus` is gated by correctness, so a fast wrong answer does not receive
-extra reward.
+`speed_bonus` is gated by correctness, so a fast wrong answer does not receive extra reward.
